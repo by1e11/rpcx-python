@@ -129,7 +129,7 @@ class Dispatcher:
     async def request(
         self,
         req: Message,
-        send_stream_chunk: Callable[[Any], Coroutine[None, None, None]] = None,
+        send_stream_chunk: Callable[[Any], Coroutine[None, None, None]],
         task_status: TaskStatus[None] = TASK_STATUS_IGNORED,
     ) -> Any:
         """
@@ -147,11 +147,13 @@ class Dispatcher:
 
         try:
             with task.cancel_scope, stream.stream_producer, stream.stream_consumer:
-                # if method.stream_arg is not None:
-                #     kwargs[method.stream_arg] = stream
                 kwargs = req.payload
-
-                # import pdb; pdb.set_trace()
+                if method.stream_arg is not None:
+                    # streaminig
+                    kwargs[method.stream_arg] = stream
+                    # streaming will always send a result 
+                    # response as the end chunk
+                    req.isoneway = False
 
                 LOG.debug("Dispatch: %s %s %s", method_name, kwargs)
                 return await method.func(**kwargs)
@@ -159,6 +161,9 @@ class Dispatcher:
             del self.tasks[req.message_id]
 
     async def stream_chunk(self, request_id: int, value: Any) -> None:
+        """
+        Request to stream chunks of data from client 
+        """
         task = self.tasks[request_id]
         if task.stream is not None:
             await task.stream.stream_producer.send(value)
@@ -169,6 +174,9 @@ class Dispatcher:
             await task.stream.stream_producer.aclose()
 
     def cancel(self, request_id: int) -> None:
+        """
+        Request to cancel a streaming task.
+        """
         task = self.tasks[request_id]
         task.cancel_scope.cancel()
 
@@ -181,16 +189,14 @@ class RPCServer:
         """
         Handle a request call.
         """
-        sent_stream_chunk = False
+        # sent_stream_chunk = False
+        request = Message()
 
         async def send_stream_chunk_wrapper(value: Any) -> None:
-            nonlocal sent_stream_chunk
-            sent_stream_chunk = True
-            await self.send_stream_chunk(request.id, value)
+            await self.send_stream_chunk(client, request, value)
 
         async with client:
             try:
-                request = Message()
                 complete: bool = False
                 while not complete:
                     msg = await client.receive(1024)
@@ -201,19 +207,16 @@ class RPCServer:
                     request, 
                     send_stream_chunk_wrapper,
                 )
-                # import pdb; pdb.set_trace()
-                if sent_stream_chunk:
-                    await self.send_stream_end(request.id)
 
                 if not request.isoneway:
-                    await self.send_response(client, request, MessageStatusType.Normal, result)
+                    await self.send_result(client, request, MessageStatusType.Normal, result)
 
             except (TypeError, ValueError):
                 LOG.exception("Invalid request")
-                await self.send_response(client, request, MessageStatusType.Error, traceback.format_exc())
+                await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
             except Exception as exc:
                 LOG.warning("rpc error: %s", request, exc_info=exc)
-                await self.send_response(client, request, MessageStatusType.Error, traceback.format_exc())
+                await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
 
     async def handle_event(self, msg: Message) -> None:
         """
@@ -233,18 +236,9 @@ class RPCServer:
         else:
             LOG.warning("Received unhandled message: %s", msg)
 
-    # async def send_msg(self, message: Message) -> None:
-    #     await self.stream.send(message_to_bytes(message))
-
-    async def send_response(self, client: SocketStream, request: Message, status: MessageStatusType, value: Any) -> None:
-        response = Message(
-            service_path=request.service_path,
-            service_method=request.service_method,
-            message_id=request.message_id,
-        )
+    async def send_result(self, client: SocketStream, request: Message, status: MessageStatusType, value: Any) -> None:
+        response = Message.prepare_response(request)
         response.header.message_status_type = status
-        response.header.message_type = MessageType.Response
-        response.header.serialize_type = request.header.serialize_type
         if status == MessageStatusType.Error:
             response.metadata = {"rpcx_error": str(value)}
         else:
@@ -253,11 +247,12 @@ class RPCServer:
         # send response
         await client.send(response.encode())
 
-    # async def send_stream_chunk(self, request_id: int, value: Any) -> None:
-    #     await self.send_msg(ResponseStreamChunk(request_id, value))
-
-    # async def send_stream_end(self, request_id: int) -> None:
-    #     await self.send_msg(ResponseStreamEnd(request_id))
+    async def send_stream_chunk(self, client: SocketStream, request: Message, value: Any) -> None:
+        chunk = Message.prepare_stream_chunk(request)
+        chunk.metadata["is_chunk"] = "true" # value is not important
+        chunk.payload = value
+        # import pdb; pdb.set_trace()
+        await client.send(chunk.encode())
 
     async def serve(self, host: str = "localhost", port: int = 33632, raise_on_error: bool = False) -> None:
         """
@@ -276,29 +271,3 @@ class RPCServer:
         print(f"Start listening on {host}:{port}")
 
         await listen(local_host=host, local_port=port)
-
-        # async def wrap_task(
-        #     task: Callable[..., Coroutine[None, None, None]],
-        #     *args: Any,
-        #     task_status: TaskStatus[None],
-        # ) -> None:
-        #     try:
-        #         await task(*args, task_status=task_status)
-        #     except Exception as exc:
-        #         log_error(exc)
-
-        # async with anyio.create_task_group() as task_group:
-        #     async for data in self.stream:
-        #         try:
-        #             msg = message_from_bytes(data)
-        #             LOG.debug("Receive %s", msg)
-        #             if isinstance(msg, Request):
-        #                 await task_group.start(wrap_task, self.handle_request, msg)
-        #             else:
-        #                 await self.handle_event(msg)
-        #         except anyio.get_cancelled_exc_class():  # pragma: nocover
-        #             raise
-        #         except Exception as exc:  # internal error!
-        #             # If we're testing, we'll want to re-raise.
-        #             # For a production deployment, log it but keep the loop alive.
-        #             log_error(exc)

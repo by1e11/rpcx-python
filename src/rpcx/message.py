@@ -38,7 +38,7 @@ class Header:
         self.oneway = False
         self.compress_type: int = CompressType.DoNotCompress  # At present support only Normal！
         self.message_status_type: int = MessageStatusType.Normal
-        self.serialize_type: int = SerializeType.Json  # At present support only json！
+        self.serialize_type: int = SerializeType.MessagePack
         self.reserved = 0
 
     def to_bytes(self):
@@ -82,6 +82,10 @@ class Message:
     @property
     def isoneway(self):
         return self.header.oneway
+
+    @isoneway.setter
+    def isoneway(self, value):
+        self.header.oneway = value
 
     @property
     def isrequest(self):
@@ -151,7 +155,7 @@ class Message:
 
     def __encode_payload(self):
         data = bytes()
-        if not self.payload:
+        if self.payload is None:
             return bytes(4), bytes()
         if self.header.serialize_type == SerializeType.Json:
             data = json.dumps(self.payload).encode('utf-8')
@@ -163,13 +167,31 @@ class Message:
         size = len(data).to_bytes(4, 'big')
         return size, data
 
-    # @classmethod
-    # def compose_response(cls, data: bytes):
-    #     response = cls()
-    #     response.__decode(data)
-    #     assert response.header.message_type == MessageType.Response, 'wrong message type'
+    @classmethod
+    def prepare_response(cls, req: 'Message'):
+        response = Message(
+            service_path=req.service_path,
+            service_method=req.service_method,
+            message_id=req.message_id,
+        )
+        response.header.message_type = MessageType.Response
+        response.header.serialize_type = req.header.serialize_type
 
-    #     return response
+        return response
+
+    @classmethod
+    def prepare_stream_chunk(cls, req: 'Message'):
+        chunk = Message(
+            service_path=req.service_path,
+            service_method=req.service_method,
+            message_id=req.message_id,
+        )
+        chunk.header.message_type = MessageType.Response
+        chunk.header.serialize_type = req.header.serialize_type
+        chunk.header.message_status_type = MessageStatusType.Normal
+        chunk.metadata = {}
+
+        return chunk
 
     def decode(self, data: bytes):
         """
@@ -188,7 +210,7 @@ class Message:
             except ValueError as e:
                 raise ValueError('decode header error: {}'.format(e))
 
-            buf.read(8) # skip unused message_id
+            self.message_id = int.from_bytes(buf.read(8), 'big')
             self.total_size = int.from_bytes(buf.read(4), 'big')
             self.raw_data = bytes()
 
@@ -207,7 +229,7 @@ class Message:
     def __decode(self):
         buf = io.BytesIO(self.raw_data)
         buf.read(4) # skip header
-        self.message_id = int.from_bytes(buf.read(8), 'big')
+        buf.read(8) # skip message id
         buf.read(4) # skip total size
         service_path_size = int.from_bytes(buf.read(4), 'big')
         service_path = buf.read(service_path_size)
@@ -245,6 +267,7 @@ class Message:
     def __decode_metadata(self, metadata):
         if not metadata:
             return
+        self.metadata = {}
         buf = io.BytesIO(metadata)
         while buf.tell() < len(metadata):
             key_size = int.from_bytes(buf.read(4), 'big')
@@ -256,6 +279,7 @@ class Message:
     def __decode_playload(self, playload: bytes):
         if not playload:
             return
+
         if self.header.serialize_type == SerializeType.Json:
             data = playload.decode('utf-8')
             self.payload = json.loads(data)
