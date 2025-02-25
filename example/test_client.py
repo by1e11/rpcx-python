@@ -11,7 +11,6 @@ import io
 
 import socket
 
-
 class MessageType:
     Request = 0
     Response = 1
@@ -242,8 +241,10 @@ class Client:
 if __name__ == '__main__':
     client = Client('localhost', 33632)
     # response = client.call('TestService', 'sub', dict(a=2, b=3))
-    response = client.call('TestService', 'large_data', dict(text='a' * 100000))
+    # response = client.call('TestService', 'large_data', dict(text='a' * 100000))
+    from res.test_image import test_image
+    response = client.call('ImageService', 'base64_image', dict(base64_string=test_image))
     if response.success:
-        print(len(response.payload))
+        print(len(response.payload) if response.payload else 0)
     else:
         print(response.error)

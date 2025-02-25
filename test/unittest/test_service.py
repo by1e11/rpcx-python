@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 from abc import ABC
-from src.rpcx.server import RPCManager, RPCService
+from rpcx.server import RPCManager, RPCService
 
 
 class TestService(RPCService):

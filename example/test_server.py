@@ -1,4 +1,7 @@
-from src.rpcx.server import RPCServer, RPCService, RPCManager
+import base64
+import io
+from PIL import Image
+from rpcx.server import RPCServer, RPCService, RPCManager
 from anyio import run
 
 class TestService(RPCService):
@@ -13,6 +16,12 @@ class TestService(RPCService):
 
     async def large_data(self, text: str):
         return text
+
+class ImageService(RPCService):
+    async def base64_image(self, base64_string: str):
+       decoded_string = io.BytesIO(base64.b64decode(base64_string))
+       img = Image.open(decoded_string)
+       img.show()
 
 async def main():
     manager = RPCManager()
