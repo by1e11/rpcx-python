@@ -29,4 +29,8 @@ async def main():
     await server.serve()
 
 if __name__ == '__main__':
-    run(main)
+    try:
+        run(main)
+    except KeyboardInterrupt:
+        print("\nCtrl-C pressed. Bye!")
+        pass

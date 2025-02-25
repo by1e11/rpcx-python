@@ -15,6 +15,7 @@ Only the most basic "hello world" function call tested
     - [ ] protobuf
     - [ ] raw
 - [ ] Integrate with more tests from [rpcx-examples](https://github.com/rpcxio/rpcx-examples)
+    - [ ] service discovery, reconnect
 - [ ] Implement complete features specified by [rpcx.io](https://github.com/smallnest/rpcx) project
 - [ ] Implement streaming RPC
     - [ ] streaming arguments to server
