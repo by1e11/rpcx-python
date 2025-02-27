@@ -5,6 +5,13 @@ python server implementation of rpcx.io project
 
 Only the most basic "hello world" function call tested
 
+## Quick start
+
+```bash
+pip install -e .
+python example/streaming/server_stream.py
+```
+
 ## TODO:
 - [x] Build system
 - [x] Implement basic function call
@@ -19,7 +26,7 @@ Only the most basic "hello world" function call tested
 - [ ] Implement complete features specified by [rpcx.io](https://github.com/smallnest/rpcx) project
 - [ ] Implement streaming RPC
     - [ ] streaming arguments to server
-    - [ ] streaming response from server
+    - [x] streaming response from server
 - [ ] Implement client side
 
 ## Acknowledgement

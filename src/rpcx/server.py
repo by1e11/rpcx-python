@@ -1,26 +1,21 @@
-from abc import ABC, abstractmethod
-import abc
+from abc import ABC
 import inspect
 import logging
 import math
-import signal
-import stat
 import sys
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Dict, Optional, Tuple, get_type_hints
-from urllib import response
+from typing import Any, Callable, Coroutine, Dict, Optional, get_type_hints
 
 import anyio
-from anyio import TASK_STATUS_IGNORED, open_signal_receiver, run
-from anyio.abc import AnyByteStream, TaskStatus, SocketStream
+from anyio import TASK_STATUS_IGNORED
+from anyio.abc import TaskStatus, SocketStream
 from anyio import create_tcp_listener
 
 
 from .message import (
     Message,
     MessageStatusType,
-    MessageType
     # RequestCancel,
     # RequestStreamChunk,
     # RequestStreamEnd,
@@ -194,31 +189,36 @@ class RPCServer:
         request = Message()
 
         async def send_stream_chunk_wrapper(value: Any) -> None:
+            """
+            Stream chunked response to the client.
+            """
             await self.send_stream_chunk(client, request, value)
 
         async with client:
             try:
+                # request will be decoded once it is received completely
                 complete: bool = False
                 while not complete:
                     msg = await client.receive(1024)
                     complete = request.decode(msg)
                 
                 LOG.debug("Receive %s", request)
+                # dispatch the request
                 result = await self.dispatcher.request(
                     request, 
                     send_stream_chunk_wrapper,
                 )
 
+                # send result if not oneway (in a streaming request, the result is sent as a stream end signal (metadata is None, no payload))
                 if not request.isoneway:
                     await self.send_result(client, request, MessageStatusType.Normal, result)
 
             except (TypeError, ValueError):
                 LOG.exception("Invalid request")
                 await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
-            except (anyio.BrokenResourceError):
+            except anyio.BrokenResourceError:
                 LOG.warning("rpc client disconnected: %s.%s", request.service_path, request.service_method)
             except Exception as exc:
-                import pdb; pdb.set_trace()
                 LOG.warning("rpc error: %s.%s", request.service_path, request.service_method)
                 await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
 
