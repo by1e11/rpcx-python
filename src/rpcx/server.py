@@ -16,6 +16,7 @@ from anyio import TASK_STATUS_IGNORED, open_signal_receiver, run
 from anyio.abc import AnyByteStream, TaskStatus, SocketStream
 from anyio import create_tcp_listener
 
+
 from .message import (
     Message,
     MessageStatusType,
@@ -214,8 +215,11 @@ class RPCServer:
             except (TypeError, ValueError):
                 LOG.exception("Invalid request")
                 await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
+            except (anyio.BrokenResourceError):
+                LOG.warning("rpc client disconnected: %s.%s", request.service_path, request.service_method)
             except Exception as exc:
-                LOG.warning("rpc error: %s", request, exc_info=exc)
+                import pdb; pdb.set_trace()
+                LOG.warning("rpc error: %s.%s", request.service_path, request.service_method)
                 await self.send_result(client, request, MessageStatusType.Error, traceback.format_exc())
 
     async def handle_event(self, msg: Message) -> None:
@@ -245,7 +249,10 @@ class RPCServer:
             response.payload = value
         
         # send response
-        await client.send(response.encode())
+        try:
+            await client.send(response.encode())
+        except anyio.BrokenResourceError:
+            logging.warning("Client closed connection")
 
     async def send_stream_chunk(self, client: SocketStream, request: Message, value: Any) -> None:
         chunk = Message.prepare_stream_chunk(request)
