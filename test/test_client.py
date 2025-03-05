@@ -49,12 +49,13 @@ class Client:
 
 
 if __name__ == '__main__':
-    client = Client('localhost', 33632)
+    client = Client('172.27.50.55', 24800)
     # response = client.call('TestService', 'sub', dict(a=2, b=3))
     # response = client.call('TestService', 'large_data', dict(text='a' * 100000))
     # from res.test_image import test_image
     # response = client.call('ImageService', 'base64_image', dict(base64_string=test_image))
-    response = client.call('TestServiceStream', 'fibbonacci', dict(n=6))
+    # response = client.call('TestServiceStream', 'fibbonacci', dict(n=6))
+    response = client.call('ServiceEntry', 'create_session', dict(user_id="developer"))
     if response.success:
         print(len(response.payload) if response.payload else 0)
     else:

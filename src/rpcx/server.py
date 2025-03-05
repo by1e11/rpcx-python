@@ -273,7 +273,12 @@ class RPCServer:
             
         async def listen(**kwargs):
             listener = await create_tcp_listener(**kwargs)
-            await listener.serve(self.handle_request)
+            try:
+                await listener.serve(self.handle_request)
+            except Exception as exc:
+                log_error(exc)
+            finally:
+                await listener.aclose()
 
         print(f"Start listening on {host}:{port}")
 
